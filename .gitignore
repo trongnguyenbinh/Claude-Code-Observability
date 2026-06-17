@@ -1,0 +1,16 @@
+# Secrets / generated
+.env
+devices/*.token
+satellite/dist/
+# Live per-device token map (the committed nginx/00-otel-tokens.conf is an empty
+# template; the real map is generated on the server at
+# /etc/nginx/conf.d/00-otel-tokens.conf by add-device.sh). Ignore any local copy.
+nginx/otel-tokens.map
+nginx/*.local.conf
+
+# Session/handoff history (may hold private context)
+.remember/
+.claude/
+
+# Keep the example env; never commit the real one
+!.env.example
