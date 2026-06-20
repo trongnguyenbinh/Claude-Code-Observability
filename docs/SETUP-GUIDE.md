@@ -1,15 +1,17 @@
-# Setting up Claude Code usage monitoring
+🇻🇳 Tiếng Việt | [🇬🇧 English](SETUP-GUIDE.en.md)
 
-This guide has two parts: Part A builds the central server (the collect-and-display
-stack: OTel Collector → Prometheus/Loki → Grafana, behind nginx TLS), and Part B
-configures Claude Code on each machine so it sends usage back automatically.
+# Thiết lập giám sát mức dùng Claude Code
 
-A ready-made dashboard file, `claude-code-metrics-dashboard.json`, is included for
-import into Grafana.
+Hướng dẫn này có hai phần: Phần A dựng server trung tâm (stack thu thập và hiển thị:
+OTel Collector → Prometheus/Loki → Grafana, nằm sau nginx TLS), và Phần B cấu hình
+Claude Code trên từng máy để nó tự gửi dữ liệu sử dụng về.
+
+Một file dashboard dựng sẵn, `claude-code-metrics-dashboard.json`, đã được kèm theo để
+import vào Grafana.
 
 ---
 
-## Architecture overview
+## Tổng quan kiến trúc
 
 ```
 Satellite machine (Claude Code, built-in OTLP exporter)
@@ -22,23 +24,23 @@ Satellite machine (Claude Code, built-in OTLP exporter)
 <GRAFANA_DOMAIN> ── nginx (TLS) ──► Grafana :3000 (dashboard, login)
 ```
 
-Every container binds to `localhost` only; nginx (on the host) is the sole process
-exposed on port 443. The ingest endpoint is public but gated by a per-machine token,
-so any machine can be revoked individually. Note that by default Claude Code does not
-send prompt content or tool arguments — only usage metrics and the user's email.
+Mọi container chỉ bind vào `localhost`; nginx (trên host) là tiến trình duy nhất lộ ra
+cổng 443. Endpoint ingest public nhưng được khoá bằng token per-machine, nên có thể
+revoke từng máy riêng. Lưu ý mặc định Claude Code không gửi nội dung prompt hay tham số
+tool, chỉ gửi metric usage và email của user.
 
 ---
 
-## Part A — Build the central server
+## Phần A: Dựng server trung tâm
 
-### A0. Prerequisites
+### A0. Yêu cầu
 
-A Linux host with Docker + Docker Compose and nginx + certbot already installed (this
-guide reuses the host's nginx). Point two DNS records at the host: `<OTEL_DOMAIN>` for
-ingest and `<GRAFANA_DOMAIN>` for the dashboard. Open ports 80/443 to the internet
-(required for TLS and ingest); keep 3000/4318/9090 closed.
+Một host Linux đã cài Docker + Docker Compose và nginx + certbot (hướng dẫn này tái dùng
+nginx của host). Trỏ hai bản ghi DNS về host: `<OTEL_DOMAIN>` cho ingest và
+`<GRAFANA_DOMAIN>` cho dashboard. Mở cổng 80/443 ra internet (cần cho TLS và ingest);
+giữ 3000/4318/9090 đóng.
 
-### A1. Get the source and set the password
+### A1. Lấy mã nguồn và đặt mật khẩu
 
 ```bash
 cd projects/observability
@@ -47,7 +49,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-### A2. Obtain a TLS certificate (one cert for both domains)
+### A2. Lấy chứng chỉ TLS (một cert cho cả hai domain)
 
 ```bash
 sudo certbot certonly --webroot -w /var/www/html \
@@ -55,12 +57,12 @@ sudo certbot certonly --webroot -w /var/www/html \
   --cert-name claude-code-observability
 ```
 
-This creates `/etc/letsencrypt/live/claude-code-observability/{fullchain,privkey}.pem`;
-certbot handles renewal.
+Lệnh này tạo `/etc/letsencrypt/live/claude-code-observability/{fullchain,privkey}.pem`;
+certbot lo việc gia hạn.
 
-### A3. Install the nginx vhosts (on the host)
+### A3. Cài nginx vhost (trên host)
 
-Copy the three files in `nginx/` into `/etc/nginx/conf.d/`:
+Copy ba file trong `nginx/` vào `/etc/nginx/conf.d/`:
 
 ```bash
 sudo cp nginx/otel.conf            /etc/nginx/conf.d/
@@ -69,44 +71,42 @@ sudo cp nginx/00-otel-tokens.conf  /etc/nginx/conf.d/   # token map, empty to be
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-What each file does: `otel.conf` accepts only `/v1/*` paths and requires a valid token
-(`map $otel_device`) before proxying to `127.0.0.1:4318`, returning 401 otherwise.
-`00-otel-tokens.conf` is the `Bearer token → machine name` map — don't edit it by hand;
-use the `add-device.sh` / `revoke-device.sh` scripts. `grafana.conf` proxies to
-`127.0.0.1:3000`; to restrict it, uncomment `allow <IP>; deny all;` (an office-IP
-allowlist) and reload.
+Mỗi file làm gì: `otel.conf` chỉ chấp nhận path `/v1/*` và bắt buộc token hợp lệ
+(`map $otel_device`) trước khi proxy tới `127.0.0.1:4318`, ngược lại trả 401.
+`00-otel-tokens.conf` là map `Bearer token → tên máy`, đừng sửa tay; hãy dùng script
+`add-device.sh` / `revoke-device.sh`. `grafana.conf` proxy tới `127.0.0.1:3000`; để hạn
+chế, bỏ comment `allow <IP>; deny all;` (allowlist theo IP văn phòng) rồi reload.
 
-### A4. Start the stack
+### A4. Khởi động stack
 
 ```bash
 sudo docker compose up -d
 sudo docker compose ps        # you should see 4 containers: otel-collector, prometheus, loki, grafana
 ```
 
-The stack uses `restart: unless-stopped`, so it comes back automatically after a reboot.
-The four components (see `docker-compose.yml` for details):
+Stack dùng `restart: unless-stopped`, nên tự bật lại sau khi reboot. Bốn thành phần (xem
+`docker-compose.yml` để biết chi tiết):
 
-| Service | Image | Port (localhost) | Role |
+| Service | Image | Port (localhost) | Vai trò |
 |---|---|---|---|
-| otel-collector | otel/opentelemetry-collector-contrib:0.119.0 | 4318 | Receives OTLP, forwards metrics→Prometheus, logs→Loki |
-| prometheus | prom/prometheus:v3.1.0 | 9090 | Stores metrics (90-day retention) |
-| loki | grafana/loki:3.3.2 | (internal) | Stores logs |
-| grafana | grafana/grafana:11.4.0 | 3000 | Dashboard + login |
+| otel-collector | otel/opentelemetry-collector-contrib:0.119.0 | 4318 | Nhận OTLP, chuyển metric→Prometheus, log→Loki |
+| prometheus | prom/prometheus:v3.1.0 | 9090 | Lưu metric (giữ 90 ngày) |
+| loki | grafana/loki:3.3.2 | (internal) | Lưu log |
+| grafana | grafana/grafana:11.4.0 | 3000 | Dashboard + đăng nhập |
 
-### A5. Log in to Grafana and import the dashboard
+### A5. Đăng nhập Grafana và import dashboard
 
-Open `https://<GRAFANA_DOMAIN>`, user `admin`, with the `GF_ADMIN_PASSWORD` from
-`.env` — change the password immediately after logging in. The Prometheus and Loki
-datasources are already provisioned (`grafana/provisioning/datasources/`), so no
-manual setup is needed.
+Mở `https://<GRAFANA_DOMAIN>`, user `admin`, với `GF_ADMIN_PASSWORD` lấy từ `.env`, đổi
+mật khẩu ngay sau khi đăng nhập. Hai datasource Prometheus và Loki đã được provision sẵn
+(`grafana/provisioning/datasources/`), nên không phải cấu hình tay.
 
-Import the dashboard: **Dashboards → New → Import → Upload JSON**, choose
-`docs/claude-code-metrics-dashboard.json`, select the Prometheus datasource, and
-import. The dashboard is named "Claude Code Metrics (Prometheus)" and includes filters
-for Organization / User / Machine / Model, plus two leaderboard panels — "Top Devices
-by Cost" and "Top Devices by Tokens" — ranking the top 10 machines.
+Import dashboard: **Dashboards → New → Import → Upload JSON**, chọn
+`docs/claude-code-metrics-dashboard.json`, chọn datasource Prometheus, rồi import.
+Dashboard tên "Claude Code Metrics (Prometheus)" và có sẵn filter cho
+Organization / User / Machine / Model, cùng hai panel leaderboard: "Top Devices by Cost"
+và "Top Devices by Tokens", xếp hạng 10 máy cao nhất.
 
-### A6. Quick check on the server
+### A6. Kiểm tra nhanh trên server
 
 ```bash
 # Is the Collector receiving data?
@@ -115,38 +115,38 @@ sudo docker compose logs otel-collector --tail=50
 curl -s 'http://localhost:9090/api/v1/query?query=claude_code_session_count_total' | head
 ```
 
-The real metric names to query: `claude_code_cost_usage_USD_total`,
-`claude_code_token_usage_tokens_total` (`type` label), `claude_code_session_count_total`,
-`claude_code_active_time_seconds_total`. Common labels: `machine`, `user_id`,
-`user_email`, `model`, `query_source`, `effort`.
+Tên metric thật để truy vấn: `claude_code_cost_usage_USD_total`,
+`claude_code_token_usage_tokens_total` (label `type`),
+`claude_code_session_count_total`, `claude_code_active_time_seconds_total`. Các label
+thường dùng: `machine`, `user_id`, `user_email`, `model`, `query_source`, `effort`.
 
 ---
 
-## Part B — Configure a satellite machine
+## Phần B: Cấu hình máy satellite
 
-Each machine needs its own token (issued on the server), then Claude Code is configured
-to push telemetry back.
+Mỗi máy cần token riêng (cấp trên server), rồi Claude Code được cấu hình để đẩy telemetry
+về.
 
-### B1. Issue a token (run on the server, as root)
+### B1. Cấp token (chạy trên server, với quyền root)
 
 ```bash
 cd projects/observability
 sudo bash scripts/add-device.sh machine-name      # e.g. dev-01, laptop-02, server-01
 ```
 
-The script handles everything: it generates a `tok_<name>_<random>` token, writes it
-into `00-otel-tokens.conf`, runs `nginx -t` and reloads, and finally prints the token,
-a `settings.json` snippet, and a one-click command for that machine.
+Script lo hết: nó sinh token `tok_<name>_<random>`, ghi vào `00-otel-tokens.conf`, chạy
+`nginx -t` và reload, rồi cuối cùng in ra token, một đoạn snippet `settings.json`, và một
+lệnh 1-click cho đúng máy đó.
 
-Remove a machine (blocked immediately):
+Gỡ một máy (chặn ngay lập tức):
 
 ```bash
 sudo bash scripts/revoke-device.sh machine-name
 ```
 
-### B2. Install on the satellite machine
+### B2. Cài trên máy satellite
 
-Copy the `satellite/` folder to the machine and run it.
+Copy thư mục `satellite/` sang máy rồi chạy.
 
 **Ubuntu / Linux / macOS:**
 ```bash
@@ -154,19 +154,19 @@ OTEL_TOKEN='tok_...' bash install-otel.sh
 # optional: OTEL_MACHINE='machine-name' OTEL_USER='user-name' OTEL_ENDPOINT='https://<OTEL_DOMAIN>'
 ```
 
-**Windows:** double-click `install-otel.bat`, or:
+**Windows:** double-click `install-otel.bat`, hoặc:
 ```powershell
 powershell -ExecutionPolicy Bypass -File install-otel.ps1 -Token 'tok_...' -Machine 'machine-name'
 ```
 
-The script writes `~/.claude/settings.json` (merging with your existing config if `jq`
-is present), fills in `machine`/`user`, then tests the connection: 200/400/415 means the
-server was reached and the token is valid, 401 means a bad token, and 000 means the
-server is unreachable. Then open Claude Code and data is sent automatically.
+Script ghi `~/.claude/settings.json` (merge với config sẵn có nếu có `jq`), điền
+`machine`/`user`, rồi test kết nối: 200/400/415 nghĩa là tới được server và token hợp lệ,
+401 nghĩa là token sai, và 000 nghĩa là không tới được server. Sau đó mở Claude Code và
+dữ liệu được gửi tự động.
 
-### B3. Manual configuration (if not using the script)
+### B3. Cấu hình thủ công (nếu không dùng script)
 
-Add to `~/.claude/settings.json`:
+Thêm vào `~/.claude/settings.json`:
 
 ```json
 {
@@ -182,44 +182,43 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-`machine` is the label that identifies the MACHINE (the "Machine" dropdown on the
-dashboard); `user.id` identifies the USER. Do not enable `OTEL_LOG_USER_PROMPTS` or
-`OTEL_LOG_TOOL_DETAILS` in production — they cause prompt and tool content to be sent.
+`machine` là label nhận diện MÁY (dropdown "Machine" trên dashboard); `user.id` nhận
+diện USER. Đừng bật `OTEL_LOG_USER_PROMPTS` hay `OTEL_LOG_TOOL_DETAILS` trên production,
+chúng khiến nội dung prompt và tool bị gửi đi.
 
-### B4. Verify the data arrives
+### B4. Xác minh dữ liệu về tới nơi
 
-Open Claude Code, run a few commands, then on the server:
+Mở Claude Code, chạy vài lệnh, rồi trên server:
 
 ```bash
 curl -s 'http://localhost:9090/api/v1/query' \
   --data-urlencode 'query=sum by (machine)(claude_code_cost_usage_USD_total)'
 ```
 
-If `machine=machine-name` shows a value, you're set. The Grafana "Machine" dropdown
-will also list that machine (within the selected time range).
+Nếu `machine=machine-name` hiện ra một giá trị thì xong. Dropdown "Machine" của Grafana
+cũng sẽ liệt kê máy đó (trong khoảng thời gian đã chọn).
 
-A common false alarm: the `claude_code_session_count_total` metric is only emitted when
-a new session opens. A machine configured mid-session may not show a session count until
-a new Claude window is opened.
+Một báo động giả thường gặp: metric `claude_code_session_count_total` chỉ được phát ra
+khi mở một session mới. Một máy được cấu hình giữa chừng session có thể chưa hiện session
+count cho tới khi mở một cửa sổ Claude mới.
 
 ---
 
-## Operations & security (summary)
+## Vận hành & bảo mật (tóm tắt)
 
-For status / restart: `sudo docker compose ps`, `sudo docker compose up -d`,
-`sudo docker compose restart grafana`. View logs with
+Để xem trạng thái / restart: `sudo docker compose ps`, `sudo docker compose up -d`,
+`sudo docker compose restart grafana`. Xem log bằng
 `sudo docker compose logs <service> --tail=50`.
 
-On security: each machine's token can be revoked individually, the Collector is never
-exposed to the internet, and Grafana is protected by login (tighten further with an IP
-allowlist). The `.env` file holding the Grafana password is not committed (gitignored).
-Provisioned dashboards live in `grafana/dashboards/` (mounted read-only); the "Metrics"
-dashboard is currently managed via import, so it's stored in Grafana's database, with a
-backup at `docs/claude-code-metrics-dashboard.json`.
+Về bảo mật: token của mỗi máy có thể revoke riêng, Collector không bao giờ lộ ra
+internet, và Grafana được bảo vệ bằng đăng nhập (siết thêm bằng IP allowlist). File
+`.env` chứa mật khẩu Grafana không được commit (gitignored). Dashboard provision nằm ở
+`grafana/dashboards/` (mount read-only); dashboard "Metrics" hiện được quản lý qua
+import, nên nó lưu trong database của Grafana, kèm một bản backup ở
+`docs/claude-code-metrics-dashboard.json`.
 
-## Changing domains / environment
+## Đổi domain / môi trường
 
-Domains are set in `nginx/*.conf` (`server_name`), `satellite/install-otel.*` (the
-default `OTEL_ENDPOINT`), and `docker-compose.yml` (`GF_SERVER_ROOT_URL`). The
-certificate is a single one named `claude-code-observability`, with both domains in its
-SAN.
+Domain được đặt ở `nginx/*.conf` (`server_name`), `satellite/install-otel.*` (mặc định
+`OTEL_ENDPOINT`), và `docker-compose.yml` (`GF_SERVER_ROOT_URL`). Chứng chỉ là một cert
+duy nhất tên `claude-code-observability`, với cả hai domain nằm trong SAN của nó.

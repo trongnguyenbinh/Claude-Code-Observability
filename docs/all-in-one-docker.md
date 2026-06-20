@@ -1,3 +1,5 @@
+🇻🇳 Tiếng Việt | [🇬🇧 English](all-in-one-docker.en.md)
+
 # All-in-one Docker image
 
 Cách chạy toàn bộ stack observability (OTel Collector + Prometheus + Loki + Grafana + nginx)

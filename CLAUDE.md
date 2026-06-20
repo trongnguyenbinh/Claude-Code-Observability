@@ -1,12 +1,16 @@
+🇻🇳 Tiếng Việt | [🇬🇧 English](CLAUDE.en.md)
+
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repo.
+Hướng dẫn cho Claude Code khi làm việc trong repo này.
 
-## What this is
+## Đây là gì
 
-A self-hosted stack that collects **Claude Code usage** (cost / tokens / sessions / logs) from a bunch of satellite machines (Ubuntu/Windows/macOS) and pulls it into one central server so you can see who's using what on a Grafana dashboard.
+Một stack tự host, thu thập **dữ liệu sử dụng Claude Code** (cost / token / session /
+log) từ nhiều máy satellite (Ubuntu/Windows/macOS) rồi gom về một server trung tâm để
+xem ai đang dùng cái gì trên dashboard Grafana.
 
-Flow:
+Luồng:
 ```
 Satellite (Claude Code built-in OTLP exporter)
   │ HTTPS 443 + Bearer token (one token per device)
@@ -18,45 +22,54 @@ Satellite (Claude Code built-in OTLP exporter)
 <GRAFANA_DOMAIN> ── nginx (TLS) ──► Grafana :3000 (dashboard + login)
 ```
 
-All containers publish to **localhost only**; the host nginx (reused, not in compose) terminates TLS and exposes 443.
+Tất cả container đều publish **chỉ vào localhost**; nginx trên host (tái dùng, không
+nằm trong compose) terminate TLS và lộ ra cổng 443.
 
-## Layout
+## Bố cục
 
-| Path | Role |
+| Path | Vai trò |
 |---|---|
-| `docker-compose.yml` | 4 services: otel-collector, prometheus, loki, grafana |
-| `otel-collector/config.yaml` | OTLP in → Prometheus metrics + Loki logs |
-| `prometheus/prometheus.yml` | scrapes collector `:8889` |
-| `loki/loki-config.yaml` | single-binary Loki, filesystem store, 90d retention |
-| `grafana/provisioning/` | datasources (Prom+Loki) + dashboard provider |
-| `nginx/otel.conf` | ingest vhost — only `/v1/*`, requires valid token (`map $otel_device`) → 401 if missing |
-| `nginx/grafana.conf` | dashboard vhost → Grafana, optional office-IP whitelist |
-| `nginx/00-otel-tokens.conf` | token→device map. **Never edit by hand** — use scripts |
-| `scripts/add-device.sh` / `revoke-device.sh` | issue / revoke per-device token (run on server as root) |
-| `satellite/install-otel.{sh,ps1,bat}` | 1-click client config writer for `~/.claude/settings.json` |
-| `docs/SETUP-GUIDE.md` | full server + satellite setup guide |
-| `docs/claude-code-metrics-dashboard.json` | Grafana dashboard backup |
+| `docker-compose.yml` | 4 service: otel-collector, prometheus, loki, grafana |
+| `otel-collector/config.yaml` | OTLP vào → Prometheus metrics + Loki logs |
+| `prometheus/prometheus.yml` | scrape collector `:8889` |
+| `loki/loki-config.yaml` | Loki single-binary, lưu filesystem, giữ 90 ngày |
+| `grafana/provisioning/` | datasource (Prom+Loki) + dashboard provider |
+| `nginx/otel.conf` | vhost ingest, chỉ `/v1/*`, cần token hợp lệ (`map $otel_device`) → 401 nếu thiếu |
+| `nginx/grafana.conf` | vhost dashboard → Grafana, tuỳ chọn whitelist IP văn phòng |
+| `nginx/00-otel-tokens.conf` | map token→device. **Không bao giờ sửa tay**, dùng script |
+| `scripts/add-device.sh` / `revoke-device.sh` | cấp / thu hồi token per-device (chạy trên server với quyền root) |
+| `satellite/install-otel.{sh,ps1,bat}` | trình ghi config client 1-click cho `~/.claude/settings.json` |
+| `docs/SETUP-GUIDE.md` | hướng dẫn setup đầy đủ server + satellite |
+| `docs/claude-code-metrics-dashboard.json` | bản backup dashboard Grafana |
 
-## Placeholders — IMPORTANT
+## Placeholder: QUAN TRỌNG
 
-This repo is scrubbed of private info. Real values are **not** committed; they appear as angle-bracket tokens:
+Repo này đã bóc sạch thông tin riêng tư. Giá trị thật **không** được commit; chúng xuất
+hiện dưới dạng token trong dấu ngoặc nhọn:
 
-- `<OTEL_DOMAIN>` — ingest domain (e.g. `otel.example.com`)
-- `<GRAFANA_DOMAIN>` — dashboard domain (e.g. `grafana.example.com`)
-- `<SERVER_PUBLIC_IP>` — central host public IP
-- `<OFFICE_IP>` — optional nginx `allow` whitelist IP
+- `<OTEL_DOMAIN>`: domain ingest (ví dụ `otel.example.com`)
+- `<GRAFANA_DOMAIN>`: domain dashboard (ví dụ `grafana.example.com`)
+- `<SERVER_PUBLIC_IP>`: IP public của host trung tâm
+- `<OFFICE_IP>`: IP whitelist tuỳ chọn cho nginx `allow`
 
-When editing, **keep these tokens** unless the user gives a real value. Do **not** invent or re-introduce concrete IPs, domains, hostnames, usernames, or device names. Device/user identities are supplied at runtime via `add-device.sh` / `install-otel.*`, never hardcoded.
+Khi sửa, **giữ nguyên các token này** trừ khi user cung cấp giá trị thật. **Đừng** bịa
+hay đưa lại IP, domain, hostname, username, hay tên device cụ thể. Danh tính device/user
+được cấp lúc runtime qua `add-device.sh` / `install-otel.*`, không bao giờ hardcode.
 
-## Secrets — do NOT commit
+## Secret: KHÔNG commit
 
-`.gitignore` already excludes: `.env` (Grafana admin password), `nginx/otel-tokens.map`, `devices/*.token`, `satellite/dist/`. Only `.env.example` (placeholder password) is committed. Never write real tokens or passwords into tracked files.
+`.gitignore` đã loại trừ: `.env` (mật khẩu admin Grafana), `nginx/otel-tokens.map`,
+`devices/*.token`, `satellite/dist/`. Chỉ `.env.example` (mật khẩu placeholder) được
+commit. Không bao giờ ghi token hay mật khẩu thật vào file được track.
 
-## Real metric names (verified)
+## Tên metric thật (đã xác minh)
 
-`claude_code_cost_usage_USD_total`, `claude_code_token_usage_tokens_total` (label `type`), `claude_code_session_count_total`, `claude_code_active_time_seconds_total`. Useful labels: `machine`, `user_id`, `user_email`, `model`, `query_source`, `effort`.
+`claude_code_cost_usage_USD_total`, `claude_code_token_usage_tokens_total` (label
+`type`), `claude_code_session_count_total`, `claude_code_active_time_seconds_total`.
+Các label hữu ích: `machine`, `user_id`, `user_email`, `model`, `query_source`,
+`effort`.
 
-## Common ops (run on server, root)
+## Lệnh vận hành thường dùng (chạy trên server, root)
 
 ```bash
 sudo docker compose ps
@@ -66,7 +79,8 @@ sudo bash scripts/add-device.sh <device-name>     # issue token + print client c
 sudo bash scripts/revoke-device.sh <device-name>  # block device immediately
 ```
 
-## Notes
+## Ghi chú
 
-- Docs/comments are in Vietnamese — match that when editing existing prose.
-- Claude Code does **not** send prompt/tool content by default — only usage metrics + email. Do not enable `OTEL_LOG_USER_PROMPTS` / `OTEL_LOG_TOOL_DETAILS` on prod.
+- Tài liệu/comment dùng tiếng Việt, bám theo đó khi sửa prose có sẵn.
+- Claude Code mặc định **không** gửi nội dung prompt/tool, chỉ gửi metric usage + email.
+  Đừng bật `OTEL_LOG_USER_PROMPTS` / `OTEL_LOG_TOOL_DETAILS` trên prod.
