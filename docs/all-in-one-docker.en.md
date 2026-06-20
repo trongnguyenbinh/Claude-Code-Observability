@@ -28,7 +28,7 @@ docker pull ghcr.io/trongnguyenbinh/claude-code-observability:latest
 
 docker run -d --name ccobs \
   -p 8080:8080 \
-  -p 3000:3000 \
+  -p 3000:3001 \
   -e GF_ADMIN_PASSWORD='doi-mat-khau-manh' \
   -v ccobs-prometheus:/data/prometheus \
   -v ccobs-loki:/data/loki \
@@ -117,7 +117,7 @@ Without mounting, data is lost when the container is removed. Always mount `/dat
 | Port | Service | Note |
 |---|---|---|
 | `8080` (INGEST_PORT) | nginx OTLP ingest | Public; token-gated, wrong/missing token returns 401 |
-| `3000` (GRAFANA_PORT) | nginx -> Grafana | Grafana login |
+| `3001` (GRAFANA_PORT) | nginx -> Grafana | Grafana login |
 | `9090` | Prometheus | Bound to localhost only inside the container; debug-only |
 
 Prometheus, Loki, and Grafana all listen on `127.0.0.1` inside the container; only nginx is the
@@ -130,7 +130,7 @@ in front. If you want the container to terminate TLS itself:
 
 ```bash
 docker run -d --name ccobs \
-  -p 443:8443 -p 3000:3000 \
+  -p 443:8443 -p 3000:3001 \
   -e TLS_ENABLED=true \
   -e INGEST_PORT=8443 \
   -e OTEL_DOMAIN=otel.example.com \

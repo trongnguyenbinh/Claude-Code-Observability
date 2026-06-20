@@ -28,7 +28,7 @@ docker pull ghcr.io/trongnguyenbinh/claude-code-observability:latest
 
 docker run -d --name ccobs \
   -p 8080:8080 \
-  -p 3000:3000 \
+  -p 3000:3001 \
   -e GF_ADMIN_PASSWORD='doi-mat-khau-manh' \
   -v ccobs-prometheus:/data/prometheus \
   -v ccobs-loki:/data/loki \
@@ -116,7 +116,7 @@ Không mount thì dữ liệu mất khi xoá container. Luôn mount `/data/token
 | Cổng | Service | Ghi chú |
 |---|---|---|
 | `8080` (INGEST_PORT) | nginx ingest OTLP | Public; chặn bằng token, sai/thiếu token trả 401 |
-| `3000` (GRAFANA_PORT) | nginx -> Grafana | Đăng nhập Grafana |
+| `3001` (GRAFANA_PORT) | nginx -> Grafana | Đăng nhập Grafana |
 | `9090` | Prometheus | Chỉ bind localhost trong container; chỉ để debug |
 
 Prometheus, Loki, Grafana đều nghe `127.0.0.1` bên trong container; chỉ nginx là cổng ra
@@ -129,7 +129,7 @@ Nếu muốn container tự terminate TLS:
 
 ```bash
 docker run -d --name ccobs \
-  -p 443:8443 -p 3000:3000 \
+  -p 443:8443 -p 3000:3001 \
   -e TLS_ENABLED=true \
   -e INGEST_PORT=8443 \
   -e OTEL_DOMAIN=otel.example.com \
