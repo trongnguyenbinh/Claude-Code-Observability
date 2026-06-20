@@ -1,0 +1,37 @@
+# OTel Collector (all-in-one) — OTLP in (from nginx) -> Prometheus metrics + Loki logs.
+# Loki is local in this image, so the exporter points at 127.0.0.1.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+      grpc:
+        endpoint: 127.0.0.1:4317
+
+processors:
+  batch:
+    timeout: 10s
+
+exporters:
+  prometheus:
+    endpoint: 127.0.0.1:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+  otlphttp/loki:
+    endpoint: http://127.0.0.1:3100/otlp
+  debug:
+    verbosity: basic
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/loki]
