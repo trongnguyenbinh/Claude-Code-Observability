@@ -106,10 +106,10 @@ RUN set -eux; \
 
 # Ports:
 #   8443/8080 — nginx ingest gate (token-guarded OTLP) ; default HTTP 8080
-#   3000      — Grafana (proxied by nginx on the grafana port, but also exposed direct)
+#   3001      — Grafana UI via nginx-grafana vhost (Grafana itself stays on internal 3000; the vhost port MUST differ from 3000 in this single-container image)
 #   9090      — Prometheus (debug, localhost-style; exposed for convenience)
-# By default nginx serves ingest on $INGEST_PORT and grafana on $GRAFANA_PORT.
-EXPOSE 8080 3000 9090
+# By default nginx serves ingest on $INGEST_PORT and grafana on $GRAFANA_PORT (default 3001).
+EXPOSE 8080 3001 9090
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["supervisor"]

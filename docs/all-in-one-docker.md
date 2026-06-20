@@ -87,7 +87,7 @@ OTEL_TOKEN='tok_...' OTEL_MACHINE='ten-may' OTEL_ENDPOINT='http://server:8080' b
 | `GF_ADMIN_PASSWORD` | `changeme` | Mật khẩu admin Grafana (đổi ngay) |
 | `GF_ROOT_URL` | `http://localhost:<GRAFANA_PORT>/` | `root_url` của Grafana (đặt domain thật khi deploy) |
 | `INGEST_PORT` | `8080` | Cổng nginx nhận OTLP (có token) |
-| `GRAFANA_PORT` | `3000` | Cổng nginx phục vụ Grafana |
+| `GRAFANA_PORT` | `3001` | Cổng nginx-grafana vhost. PHẢI khác 3000 (Grafana nội bộ giữ 3000, chung container nên trùng là crash) |
 | `OTEL_DOMAIN` | `_` | `server_name` cho vhost ingest (`_` = match mọi host) |
 | `GRAFANA_DOMAIN` | `_` | `server_name` cho vhost Grafana |
 | `OTEL_PUBLIC_ENDPOINT` | `http://localhost:<INGEST_PORT>` | Endpoint public dùng trong snippet `add-device` |
