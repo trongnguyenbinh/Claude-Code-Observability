@@ -1,0 +1,24 @@
+; Grafana config (all-in-one). Rendered from env by entrypoint.sh.
+; Data (sqlite, sessions, plugins) persists under /data/grafana — mount a volume there.
+
+[paths]
+data = /data/grafana
+logs = /var/log/ccobs
+plugins = /data/grafana/plugins
+provisioning = /etc/grafana/provisioning
+
+[server]
+http_addr = 127.0.0.1
+http_port = 3000
+root_url = ${GF_ROOT_URL}
+
+[security]
+admin_user = ${GF_ADMIN_USER}
+admin_password = ${GF_ADMIN_PASSWORD}
+
+[users]
+allow_sign_up = false
+
+[analytics]
+reporting_enabled = false
+check_for_updates = false

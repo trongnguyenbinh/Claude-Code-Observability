@@ -1,0 +1,32 @@
+# INGEST vhost (all-in-one) — token-guarded OTLP HTTP → local OTel Collector :4318.
+# Rendered by entrypoint.sh from this template. The token map is included from
+# /etc/ccobs/tokens/00-otel-tokens.conf (managed by `ccobs add-device` / `revoke-device`).
+#
+# TLS is OPTIONAL here: in the all-in-one image you normally run plain HTTP behind
+# your own reverse proxy / load balancer that terminates TLS. Set TLS_ENABLED=true
+# with TLS_CERT / TLS_KEY mounted to enable in-container TLS.
+
+server {
+    listen ${INGEST_PORT};
+    listen [::]:${INGEST_PORT};
+    server_name ${OTEL_DOMAIN};
+
+    client_max_body_size 16m;
+
+    # Only accept OTLP/HTTP under /v1/* and require a valid token (map $otel_device).
+    location /v1/ {
+        if ($otel_device = "") { return 401; }
+        proxy_pass http://127.0.0.1:4318;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Otel-Device $otel_device;
+    }
+
+    # Lightweight health endpoint (no token) for container healthchecks / probes.
+    location = /healthz { return 200 "ok\n"; add_header Content-Type text/plain; }
+
+    location / { return 404; }
+}

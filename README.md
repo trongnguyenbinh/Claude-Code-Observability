@@ -8,6 +8,16 @@ how much.
 The stack is small: OTel Collector → Prometheus (metrics) + Loki (logs) → Grafana,
 all behind nginx with TLS.
 
+## Two ways to run it
+
+- **Multi-container (this README, `docker-compose.yml`)**: the four services run as
+  separate containers behind your existing host nginx + certbot. Best for production.
+- **All-in-one image**: everything (OTel Collector, Prometheus, Loki, Grafana, nginx)
+  in a single container managed by supervisord. Just `docker pull` + `docker run`, then
+  manage devices with `docker exec <container> ccobs add-device ...`. See
+  [docs/all-in-one-docker.md](docs/all-in-one-docker.md). Image:
+  `ghcr.io/trongnguyenbinh/claude-code-observability:latest` (built by GitHub Actions).
+
 ## Before you deploy: replace the placeholders
 
 The repository ships with all private details stripped out, so the code contains

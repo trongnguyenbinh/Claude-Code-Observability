@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# ccobs — management CLI for the all-in-one Claude Code Observability container.
+#
+#   docker exec <container> ccobs add-device <machine-name> [user]
+#   docker exec <container> ccobs revoke-device <machine-name|token>
+#   docker exec <container> ccobs list-devices
+#   docker exec <container> ccobs status
+#
+# Adapts scripts/add-device.sh + scripts/revoke-device.sh to run INSIDE the
+# container: the token map is the persistent file on the data volume, mirrored
+# into nginx's conf.d, and reloaded with `nginx -s reload`.
+set -euo pipefail
+
+# Load runtime knobs written by entrypoint.sh (endpoint, map paths).
+[ -f /etc/ccobs/env ] && . /etc/ccobs/env
+
+MAP="${OTEL_TOKEN_MAP:-/data/tokens/00-otel-tokens.conf}"
+NGINX_MAP="${NGINX_CONF_TOKEN_MAP:-/etc/nginx/conf.d/00-otel-tokens.conf}"
+ENDPOINT="${OTEL_PUBLIC_ENDPOINT:-http://localhost:8080}"
+
+ensure_map() {
+  if [ ! -f "$MAP" ]; then
+    mkdir -p "$(dirname "$MAP")"
+    printf 'map_hash_bucket_size 128;\nmap $http_authorization $otel_device {\n    default "";\n}\n' > "$MAP"
+  fi
+}
+
+reload_nginx() {
+  # Mirror the persistent map into conf.d, validate, reload.
+  cp "$MAP" "$NGINX_MAP"
+  nginx -t
+  nginx -s reload
+}
+
+cmd_add() {
+  local NAME="${1:?Usage: ccobs add-device <machine-name> [user]}"
+  local USER_ID="${2:-}"
+  ensure_map
+
+  local SAFE TOKEN
+  SAFE=$(printf '%s' "$NAME" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')
+  TOKEN="tok_${SAFE}_$(openssl rand -hex 16)"
+
+  # Reject duplicate device name.
+  if grep -q "\"${NAME}\";[[:space:]]*$" "$MAP"; then
+    echo "Device '${NAME}' already exists. Revoke it first to reissue." >&2
+    exit 1
+  fi
+
+  # Insert before the map's closing }.
+  local LINE="    \"Bearer ${TOKEN}\"  \"${NAME}\";"
+  sed -i "/^}/i\\${LINE}" "$MAP"
+  reload_nginx
+
+  # Build OTEL_RESOURCE_ATTRIBUTES (add user.id if provided).
+  local ATTRS="machine=${NAME}"
+  [ -n "$USER_ID" ] && ATTRS="${ATTRS},user.id=${USER_ID}"
+
+  cat <<EOF
+
+Device provisioned: ${NAME}${USER_ID:+ (user=${USER_ID})}
+Token: ${TOKEN}
+
+=== Config for this machine — paste into ~/.claude/settings.json ===
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "${ENDPOINT}",
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer ${TOKEN}",
+    "OTEL_RESOURCE_ATTRIBUTES": "${ATTRS}"
+  }
+}
+
+Or run the one-click installer on that machine (satellite/ folder):
+  Ubuntu/macOS: OTEL_TOKEN='${TOKEN}' OTEL_MACHINE='${NAME}'${USER_ID:+ OTEL_USER='${USER_ID}'} OTEL_ENDPOINT='${ENDPOINT}' bash install-otel.sh
+  Windows:      powershell -ExecutionPolicy Bypass -File install-otel.ps1 -Token '${TOKEN}' -Machine '${NAME}'
+EOF
+}
+
+cmd_revoke() {
+  local ARG="${1:?Usage: ccobs revoke-device <machine-name|token>}"
+  ensure_map
+
+  # Accept either a device name OR a token (with or without the "Bearer " prefix).
+  if grep -q "\"${ARG}\";[[:space:]]*$" "$MAP"; then
+    sed -i "/\"${ARG}\";[[:space:]]*$/d" "$MAP"
+  elif grep -qF "${ARG}" "$MAP"; then
+    # Token match — delete any map line containing the token string.
+    local ESC; ESC=$(printf '%s' "$ARG" | sed 's/[][\.*^$/]/\\&/g')
+    sed -i "/${ESC}/d" "$MAP"
+  else
+    echo "Device/token '${ARG}' not found in the map." >&2
+    exit 1
+  fi
+  reload_nginx
+  echo "Revoked '${ARG}' — token disabled, that machine can no longer send data."
+}
+
+cmd_list() {
+  ensure_map
+  echo "Registered devices:"
+  # Each device line looks like:  "Bearer tok_xxx"  "machine-name";
+  if ! grep -qE '"Bearer ' "$MAP"; then
+    echo "  (none yet — add one with: ccobs add-device <machine-name>)"
+    return 0
+  fi
+  printf "  %-28s  %s\n" "MACHINE" "TOKEN"
+  # Map line: "Bearer tok_xxx"  "machine-name";  ->  machine-name  tok_xxx
+  grep -E '"Bearer ' "$MAP" \
+    | sed -E 's/^[[:space:]]*"Bearer ([^"]+)"[[:space:]]+"([^"]+)";.*$/\2\t\1/' \
+    | while IFS=$'\t' read -r name token; do
+        printf "  %-28s  %s\n" "$name" "$token"
+      done
+}
+
+cmd_status() {
+  echo "Endpoint (installer snippet): ${ENDPOINT}"
+  echo "Token map: ${MAP}"
+  echo
+  if command -v supervisorctl >/dev/null 2>&1; then
+    supervisorctl -c /etc/supervisor/conf.d/ccobs.conf status || true
+  fi
+}
+
+case "${1:-}" in
+  add-device)    shift; cmd_add "$@";;
+  revoke-device) shift; cmd_revoke "$@";;
+  list-devices)  shift; cmd_list "$@";;
+  status)        shift; cmd_status "$@";;
+  ""|-h|--help|help)
+    cat <<'EOF'
+ccobs — Claude Code Observability all-in-one manager
+
+Usage:
+  ccobs add-device <machine-name> [user]   Issue a token, write the nginx map, reload, print installer config
+  ccobs revoke-device <machine-name|token> Remove a device/token and reload (blocked immediately)
+  ccobs list-devices                       List registered devices and their tokens
+  ccobs status                             Show endpoint, map path, and per-service supervisor status
+EOF
+    ;;
+  *) echo "Unknown command: $1 (try: ccobs help)" >&2; exit 2;;
+esac
