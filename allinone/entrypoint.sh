@@ -18,7 +18,7 @@ fi
 export OTEL_DOMAIN="${OTEL_DOMAIN:-_}"            # nginx server_name; "_" = match any host
 export GRAFANA_DOMAIN="${GRAFANA_DOMAIN:-_}"
 export INGEST_PORT="${INGEST_PORT:-8080}"         # token-guarded OTLP ingest port
-export GRAFANA_PORT="${GRAFANA_PORT:-3000}"       # Grafana dashboard port (nginx-proxied)
+export GRAFANA_PORT="${GRAFANA_PORT:-3001}"       # nginx-grafana vhost port. MUST differ from Grafana's internal http_port 3000 (all services share one netns in this image) or Grafana crash-loops "address already in use".
 export OFFICE_IP="${OFFICE_IP:-}"                 # optional allowlist IP for Grafana
 export TLS_ENABLED="${TLS_ENABLED:-false}"
 export TLS_CERT="${TLS_CERT:-/certs/fullchain.pem}"
